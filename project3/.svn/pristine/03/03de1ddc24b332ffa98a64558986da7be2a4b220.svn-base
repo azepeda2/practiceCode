@@ -1,0 +1,133 @@
+options {
+  IGNORE_CASE=false;
+}
+
+PARSER_BEGIN(simplejava)
+
+public class simplejava {
+}
+
+PARSER_END(simplejava)
+
+TOKEN_MGR_DECLS : 
+{
+	public static int comments = 0;
+	public static int nestedLvl = 0;
+	public static int currentLine = 1;
+	
+}
+
+<DEFAULT>
+SKIP : 
+{
+    	< " " >
+ |   	< "\n" > { currentLine++; }
+ |  	< "\t" >
+ |		< "/*" > { nestedLvl++; SwitchTo(IN_COMMENT); }
+ |		<"//" (~["\n","\r"])* ("\n"|"\r")> { comments++; }
+ 
+}
+
+TOKEN : 
+{
+	< ELSE: "else" >
+ |	< FOR: "for" >
+ |	< MINUS: "-" >
+ |	< PLUS: "+" >
+ |	< TIMES: "*" >
+ |	< DIVIDE: "/" >
+ |	< LEFTBRACE: "{" >
+ |	< RIGHTBRACE: "}" >
+ |	< LEFTBRACKET: "[" >
+ |	< RIGHTBRACKET: "]" >
+ |	< LEFTPARENTHESIS: "(" >
+ |	< RIGHTPARENTHESIS: ")" >
+ |	< DO: "do" >
+ |	< WHILE: "while" >
+ |	< SEMICOLON: ";" >
+ |	< AND: "&&" >
+ |	< ASSIGN: "=" >
+ |	< OR:"||" >
+ |	< EQUALS: "==" >
+ |	< NOT_EQUAL: "!=" >
+ |	< LESS_THAN: "<" >
+ |	< GREATER_THAN: ">" >
+ |	< LESS_EQUAL: "<=" >
+ |	< GREATER_EQUAL: ">=" >
+ |	< NOT: "!" >
+ |	< TRUE: "true" >
+ |	< FALSE: "false" >
+ |	< IF: "if" >
+ |	< RETURN: "return" >
+ |	< CLASS: "class" >
+ |	< NEW: "new" >
+ |	< DOT: "." >
+ |	< COMMA: "," >
+ |	< INTEGER_LITERAL: (["0"-"9"])+ >
+ |	< IDENTIFIER: (["a"-"z", "A"-"Z", "_"]) (["a"-"z", "A"-"Z", "_", "0"-"9"])* >
+}
+
+<IN_COMMENT>
+SKIP :
+{
+	< "*/" > { nestedLvl--; comments++; if(nestedLvl == 0) SwitchTo(DEFAULT); }
+ | 	< "/*" > { nestedLvl++; }
+ |	< "\n" > { currentLine++; }
+ |	< ~[] >
+}
+
+ASTProgram program():
+{
+	ASTClasses classes = new ASTClasses();
+	ASTFunctionDefinitions func_def = new ASTFunctionDefinitions();
+	ASTProgram program = new ASTProgram(classes, func_def, 0);
+}
+{
+	parse(program) <EOF> { return program; }
+}
+ASTExpression factor(ASTProgram program):
+{ ASTExpression e; ASTFormal var; Token t; int dimm = 0;}
+{
+	t = <INTEGER_LITERAL> { return new ASTIntegerLiteral(Integer.parseInt(t.image), t.beginLine); }
+|	<TRUE>
+|	<FALSE>
+|	<NEW> t = <IDENTIFIER> (((<LEFTBRACKET> e = expression() <RIGHTBRACKET>) (<LEFTBRACKET> <RIGHTBRACKET> { dimm++; })* { return new ASTNewArrayExpression(t.image, e, dimm, t.beginLine); })
+|	<LEFTPARENTHESIS> <RIGHTPARENTHESIS> { return new ASTNewClassExpression(t.image, t.beginLine); })
+}
+
+void parse(ASTProgram program):
+{}
+{
+	factor(program)
+|	classes()
+/*|	assign()*/
+
+}
+
+void classes():
+{ Token returnType; Token name; }
+{
+	returnType = <IDENTIFIER> name = <IDENTIFIER> <LEFTPARENTHESIS> (expression())? <RIGHTPARENTHESIS>
+}
+
+ASTAssignmentStatement assign():
+{ Token t; Token t2;}
+{
+	t = <IDENTIFIER> t2 = <ASSIGN> <SEMICOLON>
+	{ 
+		ASTBaseVariable var = new ASTBaseVariable(t.image, t.beginLine);
+		ASTBaseVariable var2 = new ASTBaseVariable(t2.image, t2.beginLine);
+		ASTVariableExpression exp = new ASTVariableExpression(var2, t2.beginLine);
+		return new ASTAssignmentStatement(var, exp, t.beginLine);
+	}
+} 
+
+ASTExpression expression():
+{ Token t; Token t2; }
+{
+	(t = <IDENTIFIER> | t = <INTEGER_LITERAL>) (<COMMA> (t2 = <IDENTIFIER> | t2 = <INTEGER_LITERAL>))* 
+	{ 
+		ASTBaseVariable var = new ASTBaseVariable(t.image, t.beginLine);
+		return new ASTVariableExpression(var, t.beginLine); 
+	}
+}

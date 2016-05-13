@@ -1,0 +1,278 @@
+options {
+  IGNORE_CASE=false;
+}
+
+PARSER_BEGIN(simplejava)
+
+public class simplejava {
+}
+
+PARSER_END(simplejava)
+
+TOKEN_MGR_DECLS : 
+{
+	public static int comments = 0;
+	public static int nestedLvl = 0;
+	public static int currentLine = 1;
+	
+}
+
+<DEFAULT>
+SKIP : 
+{
+    	< " " >
+ |   	< "\n" > { currentLine++; }
+ |  	< "\t" >
+ |		< "/*" > { nestedLvl++; SwitchTo(IN_COMMENT); }
+ |		<"//" (~["\n","\r"])* ("\n"|"\r")> { comments++; }
+ 
+}
+
+TOKEN : 
+{
+	< ELSE: "else" >
+ |	< FOR: "for" >
+ |	< MINUS: "-" >
+ |	< PLUS: "+" >
+ |	< TIMES: "*" >
+ |	< DIVIDE: "/" >
+ |	< LEFTBRACE: "{" >
+ |	< RIGHTBRACE: "}" >
+ |	< LEFTBRACKET: "[" >
+ |	< RIGHTBRACKET: "]" >
+ |	< LEFTPARENTHESIS: "(" >
+ |	< RIGHTPARENTHESIS: ")" >
+ |	< DO: "do" >
+ |	< WHILE: "while" >
+ |	< SEMICOLON: ";" >
+ |	< AND: "&&" >
+ |	< ASSIGN: "=" >
+ |	< OR:"||" >
+ |	< EQUALS: "==" >
+ |	< NOT_EQUAL: "!=" >
+ |	< LESS_THAN: "<" >
+ |	< GREATER_THAN: ">" >
+ |	< LESS_EQUAL: "<=" >
+ |	< GREATER_EQUAL: ">=" >
+ |	< NOT: "!" >
+ |	< TRUE: "true" >
+ |	< FALSE: "false" >
+ |	< IF: "if" >
+ |	< RETURN: "return" >
+ |	< CLASS: "class" >
+ |	< NEW: "new" >
+ |	< DOT: "." >
+ |	< COMMA: "," >
+ |	< INTEGER_LITERAL: (["0"-"9"])+ >
+ |	< IDENTIFIER: (["a"-"z", "A"-"Z", "_"]) (["a"-"z", "A"-"Z", "_", "0"-"9"])* >
+}
+
+<IN_COMMENT>
+SKIP :
+{
+	< "*/" > { nestedLvl--; comments++; if(nestedLvl == 0) SwitchTo(DEFAULT); }
+ | 	< "/*" > { nestedLvl++; }
+ |	< "\n" > { currentLine++; }
+ |	< ~[] >
+}
+
+ASTProgram program():
+{
+	ASTClasses classes = new ASTClasses();
+	ASTFunctionDefinitions func_def = new ASTFunctionDefinitions();
+	ASTProgram program = new ASTProgram(classes, func_def, 0);
+	ASTClass cls;
+	ASTFunctionDefinion function;
+}
+{
+    (cls = singleClass() { classes.addElement(cls); } )*
+    (function = functiondef() { func_def.addElement(function); })*
+    <EOF>
+
+	 { return program; }
+}
+
+
+ASTFunctionDefintion functiondef()
+{ 	Token type; Token name; 
+	ASTFormals fmls = new ASTFormals();
+	ASTStatement body;
+}
+{
+  type = <IDENTIFIER> name = <IDENTIFIER> <LEFTPARENTHESIS> fmls = formals() <RIGHTPARENTHESIS>
+        ( <SEMICOLON>   { return new ASTPrototype(type.image, name.image, fmls, type.beginLine); } |
+           body = body()   { return new ASTFunction(  ); }) 
+
+}
+
+ASTFormals formals():
+{	ASTFormals list = new ASTFormals();
+	int arrayDimension = 0;
+}
+{
+	(type = <IDENTIFIER> name = <IDENTIFIER> (<LEFTBRACKET> <RIGHTBRACKET> { arrayDimension++ })? 
+	{ 
+		ASTFormal form = new ASTFormal(type.instance, name.instance, arrayDimension, type.beginLine);
+		list.addElement(form); 
+	})* 
+	{
+		return list;
+	}
+}
+
+ASTClass singleClass():
+{ 	Token name; ASTInstanceVariableDefs vars; }
+{
+	<CLASS> name = <IDENTIFIER> <LEFTBRACE> (vars = varDefs()) <RIGHTBRACE> 
+	{
+		return new ASTClass(name.instance, vars, name.beginLine);
+	}
+}
+
+ASTInstanceVariableDefs varDefs():
+{	ASTInstanceVariableDefs varDefs = new ASTInstaceVariableDefs();
+	Token type; Token name; 
+	int arrayCount = 0; 
+}
+{
+	 (type = <IDENTIFIER> name = <IDENTIFIER> (<LEFTBRACKET> <RIGHTBRACKET>)* { arrayCount++; } <SEMICOLON>
+	{
+		ASTInstanceVariableDef var = new ASTInstanceVariableDef(type.image, name.image, arrayCount, type.beginLine);
+		varDefs.addElement(var);
+	})* { return varDefs; }
+}
+
+ASTExpression exp()
+{	Token t; Token t2; 
+	int dimm = 0;
+}
+{
+    
+    (exp() (<OR> exp())*
+    |	(<AND> exp())*
+    |	(<>)
+	|   <NEW> <IDENTIFIER> <LEFTPARANTHESIS> (exp())
+	|   <ID> (( <(> ...) | varstuff)   
+	|	handle for class.var etc C.x  
+    |	t = <INTEGER_LITERAL> { return new ASTIntegerLiteral(Integer.parseInt(t.image), t.beginLine); }
+	|	t = <TRUE> { return new ASTBooleanLiteral(t.image, t.beginLine); }
+	|	t = <FALSE> { return new ASTBooleanLiteral(t.image, t.beginLine); }
+	|	<NEW> t = <IDENTIFIER> (((<LEFTBRACKET> e = expression() <RIGHTBRACKET>) (<LEFTBRACKET> <RIGHTBRACKET> { dimm++; })* { return new ASTNewArrayExpression(t.image, e, dimm, t.beginLine); })
+	|   (t = <IDENTIFIER> | t = <INTEGER_LITERAL>) (<COMMA> (t2 = <IDENTIFIER> | t2 = <INTEGER_LITERAL>) 
+		{ 
+			ASTBaseVariable var = new ASTBaseVariable
+		})* 
+		{ 
+			ASTBaseVariable var = new ASTBaseVariable(t.image, t.beginLine);
+			return new ASTVariableExpression(var, t.beginLine); 
+		}
+	|	<LEFTPARENTHESIS> <RIGHTPARENTHESIS> { return new ASTNewClassExpression(t.image, t.beginLine); })
+}
+
+ASTExpression primExp():
+{}
+{
+	t = <IDENTIFIER> t2 = <IDENTIFIER> <SEMICOLON>
+	{
+		return new ASTVariableDefStatement(t.image, t2.image, t.beginLine);
+	}
+	/*((<ASSIGN> exp() <SEMICOLON> */
+}
+
+ASTExpression arrayExp():
+{ 	Token t; Token t2;
+	ASTExpresssion e;
+	int dimm = 0;
+}
+{
+	t = <IDENTIFIER> t2 = <IDENTIFIER>  (<LEFTBRACKET> (e = exp())? <RIGHTBRACKET> 
+	{
+		dimm++;
+	})+
+	{
+		return new ASTVariableExpression(t.image, t2.image, dimm, e, t.beginLine);
+	}
+}
+
+/*
+//handle for no definition
+		String type = t.image;
+		if(type.equals("boolean"))
+		{ 
+			ASTBooleanLiteral bool = new ASTBooleanLiteral();
+			return new ASTVariableExpression
+*/
+
+void operator():
+{	ASTExpression e; ASTExpression e2; }
+{
+	e = exp() (<PLUS> e2 = exp() { } )*{ /* HANDLE PLUS */ }
+		| <MINUS> { /*HANDLE MINUS */ }
+		| <TIMES> { /*HANDLE TIMES */ }
+		| <DIVIDE> { /*HANDLE DIVIDE */ })
+}
+
+ASTStatement stmt()
+{ Token t; Token t2; }
+{
+     forState()
+     | whileState()
+     | doWhileState()
+     | ifState()
+     | t = <IDENTIFIER> t2 = <ASSIGN> <SEMICOLON>
+		{ 
+			ASTBaseVariable var = new ASTBaseVariable(t.image, t.beginLine);
+			ASTBaseVariable var2 = new ASTBaseVariable(t2.image, t2.beginLine);
+			ASTVariableExpression exp = new ASTVariableExpression(var2, t2.beginLine);
+			return new ASTAssignmentStatement(var, exp, t.beginLine);
+		}
+     
+     <IDENTIFIER> ( <LEFTPARENTHESIS> ... <RIGHTPARENTHESIS>   |
+            <IDENTIFIER> ([])* (<ASSIGN> exp() )? <SEMICOLON> |
+           ( varstuff (.id, [exp] zero or more times    )
+                (<PLUS> <PLUS> | <MINUS> <MINUS> | = exp()) 
+     
+          )
+     
+}
+
+
+ASTForStatement forState():
+{ ASTStatement init; ASTExpression test; ASTStatement inc; ASTStatement body; }
+{
+	<FOR> <LEFTPARENTHESIS> init = stmt() <COMMA> test = exp() inc = stmt()  
+		<RIGHTPARENTHESIS> (body = stmt() | body = body()) 
+		{
+			return new ASTForStatement(init, test, inc, body, init.line_); 
+		}	
+	
+	/*<IDENTIFIER> <ASSIGN> (<INTEGER_LITERAL> | <IDENTIFIER>) <SEMICOLON> <COMMA>*/
+}
+
+void whileState():
+{	ASTExpression e; ASTStatement body; }
+{ 
+	<WHILE> <LEFTPARENTHESIS> e = exp() <RIGHTPARENTHESIS> (body = stmt() | body = body()) 
+	{
+		return new ASTWhileStatement(e, body, e.line_);
+	}
+}
+
+void doWhileState():
+{	ASTStatement body; ASTExpression e; }
+{
+	<DO> (body = stmt() | body = body()) <WHILE> <LEFTPARENTHESIS> e = exp() <RIGHTPARENTHESIS> <SEMICOLON>
+	{
+		return ASTDoWhileStatement(e, body, e.line_);
+	}
+}
+
+
+void ifState():
+{	ASTStatement then; ASTExpression e; ASTStatement els; }
+{
+	<IF> <LEFTPARENTHESIS> e = exp() <RIGHTPARENTHESIS> (then = stmt() | then = body()) (<ELSE> (els = stmt() | els = body()))?
+	{
+		return new ASTIfStatement(e, then, els e.line_);
+	}
+}
